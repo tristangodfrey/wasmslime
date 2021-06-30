@@ -4,8 +4,8 @@ Rust + WASM implementation of a slime mold simulation (based on [Characteristics
 
 ## TODO
 
-[ ] - Switch `Point` implementation for a library that has vectors/coords
-[ ] - Improve rng performance (function is blocking, either spawn threads or do async? or generate a large sample pool?)
-[x] - Fix the bug of cells randomly dying
-[ ] - Implement filter intensity (trail map)
-[ ] - Link `SimulationConfig` to HTML form for easy parameter tweaking
+[ ] - Switch `Point` implementation for a library that has vectors/coords  
+[ ] - Improve rng performance (function is blocking, either spawn threads or do async? or generate a large sample pool?)  
+[x] - Fix the bug of cells randomly dying  
+[ ] - Implement filter intensity (trail map)  
+[ ] - Link `SimulationConfig` to HTML form for easy parameter tweaking  
