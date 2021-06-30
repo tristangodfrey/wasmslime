@@ -52,10 +52,10 @@ impl TrailMap {
         }
     }
 
-    /// Fills a circular area of a given size, with an optional gradient
-    pub fn fill(&mut self, point: Point, radius: f64) {
+    // Fills a circular area of a given size, with an optional gradient
+    // pub fn fill(&mut self, point: Point, radius: f64) {
 
-    }
+    // }
 }
 
 impl Plane<u8> for TrailMap {
