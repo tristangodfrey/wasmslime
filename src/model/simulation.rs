@@ -1,16 +1,19 @@
+use crate::Rng;
+
 use super::cell::*;
 use super::plane::*;
 use super::config::*;
 use super::point::*;
 use super::trail_map::*;
-use super::super::rand;
 
 pub struct Simulation {
     pub cell_map: CellMap,
     pub trail_map: TrailMap,
     cell_vec: Vec<Option<Cell>>,
     pub config: SimulationConfig,
-    random_fn: fn() -> f64
+    /// Remaining indexes to be processed by motor()
+    remaining: Vec<usize>,
+    cell_indices: Vec<usize>
 }
 
 pub enum Direction {
@@ -20,13 +23,18 @@ pub enum Direction {
 
 impl Simulation {
 
-    pub fn new(config: SimulationConfig, cell_map: CellMap, trail_map: TrailMap, random_fn: fn() -> f64) -> Self {
+    pub fn new(config: SimulationConfig, cell_map: CellMap, trail_map: TrailMap) -> Self {
+
+        let remaining: Vec<usize> = (0..cell_map.cells.len()).collect();
+        let cell_indices = remaining.clone();
+
         Self {
             cell_map,
             trail_map,
             cell_vec: vec![None; config.height * config.width],
             config,
-            random_fn
+            remaining,
+            cell_indices
         }
     }
 
@@ -38,19 +46,16 @@ impl Simulation {
         self.cell_vec.get(self.get_index(x, y))
     }
 
-    pub fn motor(&mut self) {
-        // We create a vector holding every single index of the cell map
-        let mut remaining: Vec<usize> = (0..self.cell_map.cells.len()).collect();
+    pub fn motor<F: FnMut() -> f64>(&mut self, random_fn: &mut F) {
+        while ! self.remaining.is_empty() {
 
-        while ! remaining.is_empty() {
-
-            let ri = (self.random_fn)() * ((remaining.len() - 1) as f64);
+            let ri = (random_fn)() * ((self.remaining.len() - 1) as f64);
 
             let ri = ri.round() as usize;
 
-            let i = remaining[ri];
+            let i = self.remaining[ri];
 
-            remaining.remove(ri);
+            self.remaining.remove(ri);
 
             if let Some(mut cell) = self.cell_map.cells.get(i).unwrap().clone() {
                 let new_point = cell.position + (Point::from_degrees(cell.direction) * self.config.step_size as f64);
@@ -65,7 +70,7 @@ impl Simulation {
                         // spot is occupied, don't move
                         println!("Spot occupied by {:?}", cell);
                         // choose random orientation
-                        let new_cell = Cell { direction: ((self.random_fn)() * 360f64), position: cell.position };
+                        let new_cell = Cell { direction: ((random_fn)() * 360f64), position: cell.position };
                         self.cell_map.cells[i] = Some(new_cell);
                         
                     } else {
@@ -84,10 +89,12 @@ impl Simulation {
                 }
             }
         }
+
+        // self.remaining = self.cell_indices;
     }
 
     /// Sensory stage, sets proper rotation for cells
-    fn sensor(&mut self) {
+    fn sensor<F: FnMut() -> f64>(&mut self, random_fn: &mut F) {
         for i in 0..self.cell_map.cells.len() {
             if let Some(cell) = self.cell_map.cells.get_mut(i).unwrap() {
                 let sensor_config = self.config.sensor_config.clone();
@@ -112,7 +119,7 @@ impl Simulation {
                     continue;
                 } else if fw < fl && fw < fr {
                     //rotate randomly by RA
-                    if (self.random_fn)() > 0.5f64 {
+                    if (random_fn)() > 0.5f64 {
                         direction = Some(Direction::LEFT);
                     } else {
                         direction = Some(Direction::RIGHT);
@@ -174,9 +181,9 @@ impl Simulation {
         self.trail_map.data = new_data;
     }
 
-    pub fn step(&mut self) {
-        self.motor();
-        self.sensor();
+    pub fn step<F: FnMut() -> f64>(&mut self, random_fn: &mut F) {
+        self.motor(random_fn);
+        self.sensor(random_fn);
         self.diffuse();
     }
 }
@@ -204,9 +211,9 @@ pub mod test {
 
         cell_map.add_cell(Point::new(2f64, 4f64), 0f64);
 
-        let mut simulation = Simulation::new(sim_conf, cell_map, trail_map, rand);
+        let mut simulation = Simulation::new(sim_conf, cell_map, trail_map);
 
-        simulation.motor();
+        // simulation.motor();
 
         // If we get a cell at this point, it moved correctly
         let cell = simulation.cell_map.get_value(3, 4);
@@ -240,7 +247,7 @@ pub mod test {
 
         let rand_fn = || 0.5f64;
 
-        let mut simulation = Simulation::new(sim_conf, cell_map, trail_map, rand_fn);
+        let mut simulation = Simulation::new(sim_conf, cell_map, trail_map);
 
         simulation.diffuse();
 
@@ -274,9 +281,9 @@ pub mod test {
         cell_map.add_cell(Point::new(20f64, 2f64), 25f64);
         cell_map.add_cell(Point::new(30f64, 3f64), 90f64);
 
-        let mut simulation = Simulation::new(config, cell_map, trail_map, || 0.3f64);
+        let mut simulation = Simulation::new(config, cell_map, trail_map);
 
-        simulation.step();
+        // simulation.step();
 
         assert_eq!(1, 1);
     }

@@ -1,3 +1,8 @@
+#![feature(unboxed_closures)]
+#![feature(fn_traits)]
+
+use std::vec::{self, IntoIter};
+
 use model::cell::{CellMap};
 use model::trail_map::*;
 use model::config::SimulationConfig;
@@ -30,22 +35,6 @@ struct Model {
     live_cell_count: usize
 }
 
-pub fn rand() -> f64 {
-    let mut val: [u8; 1] = [0];
-
-    match getrandom::getrandom(&mut val) {
-        Ok(()) => {
-
-        },
-        Err(err) => {
-            Console::log(&format!("Failed to generate random number! {:?}", err));
-        }
-    }
-
-    val[0] as f64 / 255f64
-
-}
-
 fn get_context(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
     canvas
         .get_context("2d")
@@ -53,6 +42,64 @@ fn get_context(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
         .unwrap()
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .unwrap()
+}
+
+pub struct Rng {
+    random_numbers: IntoIter<f64>
+}
+
+impl Rng {
+    pub fn new(size: usize) -> Self {
+        let mut random_numbers = vec![1u8; size];
+
+        let mut vec: Vec<u32> = (0..10).collect();
+        vec.shuffle(&mut thread_rng());
+
+        Console::log(&format!("{:?}", vec));
+
+        match getrandom::getrandom(&mut random_numbers) {
+            Ok(_) => {
+                Console::log("Random success");
+            }
+            Err(e) => {
+                Console::log(&format!("Random failed: {:?}", e));
+            }
+        }
+
+        let random_numbers: Vec<f64> = random_numbers.iter().map(|item| *item as f64 / 255f64).collect();
+
+        Self {
+            random_numbers: random_numbers.into_iter()
+        }
+    }
+}
+
+impl Fn<()> for Rng {
+    extern "rust-call" fn call(&self, _args: ()) -> f64 {
+        unimplemented!()
+    }
+}
+
+impl FnMut<()> for Rng {
+    extern "rust-call" fn call_mut(&mut self, _args: ()) -> f64 {
+        match self.random_numbers.next() {
+            Some(value) => {
+                value
+            }
+            None => {
+                Console::log("Random numbers exhausted, wrapping");
+                0.5f64
+            }
+        }
+    }
+}
+
+impl FnOnce<()> for Rng {
+    type Output = f64;
+
+    extern "rust-call" fn call_once(self, _args: ()) -> f64 {
+        unimplemented!()
+    }
 }
 
 impl Component for Model {
@@ -66,8 +113,12 @@ impl Component for Model {
         config.width = 200;
         config.height = 200;
 
-        let cell_map = CellMap::new_random(config.width, config.height, config.sensor_config.clone(), rand, 0.1f64);
-        let trail_map = TrailMap::new_random(config.width, config.height, rand);
+        let mut rng = Rng::new(50000);
+
+        Console::log("Random numbers have been generated");
+
+        let cell_map = CellMap::new_random(config.width, config.height, config.sensor_config.clone(), &mut rng, 0.1f64);
+        let trail_map = TrailMap::new_random(config.width, config.height, &mut Rng::new(50000));
 
         Self {
             link,
@@ -75,7 +126,7 @@ impl Component for Model {
             cell_canvas: NodeRef::default(),
             trail_canvas: NodeRef::default(),
             composite_canvas: NodeRef::default(),
-            simulation: Simulation::new(config, cell_map, trail_map, rand),
+            simulation: Simulation::new(config, cell_map, trail_map),
             live_cell_count: 0
         }
     }
@@ -84,7 +135,7 @@ impl Component for Model {
         match msg {
             Msg::Step => {
                 //do the step
-                self.simulation.step();
+                self.simulation.step(&mut Rng::new(50000));
                 
                 //render shit
                 if let Some(cell_canvas) = self.cell_canvas.cast::<HtmlCanvasElement>() {

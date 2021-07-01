@@ -73,7 +73,7 @@ impl CellMap {
         }
     }
 
-    pub fn new_random(width: usize, height: usize, sensor_config: SensorConfig, random_fn: fn() -> f64, probability: f64) -> Self {
+    pub fn new_random<F>(width: usize, height: usize, sensor_config: SensorConfig, random_fn: &mut F, probability: f64) -> Self where F: FnMut() -> f64 {
         let mut cells = vec![Option::None; width * height];
 
         for (index, el) in cells.iter_mut().enumerate() {
@@ -112,6 +112,14 @@ impl CellMap {
 
     pub fn live_cells(&self) -> usize {
         self.cells.iter().filter(|val| val.is_some()).count()
+    }
+}
+
+impl Iterator for CellMap {
+    type Item = Cell;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
     }
 }
 

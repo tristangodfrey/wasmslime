@@ -4,8 +4,14 @@ Rust + WASM implementation of a slime mold simulation (based on [Characteristics
 
 ## TODO
 
-[ ] - Switch `Point` implementation for a library that has vectors/coords  
-[ ] - Improve rng performance (function is blocking, either spawn threads or do async? or generate a large sample pool?)  
+
+[ ] - (big perf issue) Make sure that `remaining` (in `motor()` step) is always allocated, memcpy is taking up lots of time
+[x] - Improve rng performance (function is blocking, either spawn threads or do async? or generate a large sample pool?)  
 [x] - Fix the bug of cells randomly dying  
-[ ] - Implement filter intensity (trail map)  
+[ ] - Implement filter intensity (trail map)
+[ ] - Implement multilayer
+[ ] - - Linked unidirectional
+[ ] - - Linked bidirectional (with wrap-around?)
+[ ] - - Dynamic linked unidirectional (push/pop layers/cells based on chemoattractant values at the bottom of the stack)
 [ ] - Link `SimulationConfig` to HTML form for easy parameter tweaking  
+[ ] - Switch `Point` implementation for a library that has vectors/coords  

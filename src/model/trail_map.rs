@@ -36,7 +36,7 @@ impl TrailMap {
         }
     }
 
-    pub fn new_random(width: usize, height: usize, random_fn: fn() -> f64) -> Self {
+    pub fn new_random<F>(width: usize, height: usize, random_fn: &mut F) -> Self where F: FnMut() -> f64 {
         let mut data = vec![0u8; width * height];
 
         for (index, el) in data.iter_mut().enumerate() {
