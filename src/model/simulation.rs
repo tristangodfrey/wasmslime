@@ -1,4 +1,11 @@
-use crate::Rng;
+use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+
+use rand::Rng;
+use rand::random;
+use rand::seq::IteratorRandom;
+use rand::thread_rng;
 
 use super::cell::*;
 use super::plane::*;
@@ -9,11 +16,8 @@ use super::trail_map::*;
 pub struct Simulation {
     pub cell_map: CellMap,
     pub trail_map: TrailMap,
-    cell_vec: Vec<Option<Cell>>,
     pub config: SimulationConfig,
-    /// Remaining indexes to be processed by motor()
-    remaining: Vec<usize>,
-    cell_indices: Vec<usize>
+    random_cells: Vec<(Point<usize>, Cell)>
 }
 
 pub enum Direction {
@@ -25,124 +29,104 @@ impl Simulation {
 
     pub fn new(config: SimulationConfig, cell_map: CellMap, trail_map: TrailMap) -> Self {
 
-        let remaining: Vec<usize> = (0..cell_map.cells.len()).collect();
-        let cell_indices = remaining.clone();
+        let cell_count = cell_map.cells.len();
 
         Self {
             cell_map,
             trail_map,
-            cell_vec: vec![None; config.height * config.width],
             config,
-            remaining,
-            cell_indices
+            random_cells: Vec::with_capacity(cell_count)
         }
     }
 
-    fn get_index(&self, x: usize, y: usize) -> usize {
-        (y * self.config.width) + x
-    }
+    pub fn motor(&mut self) {
+        let n = self.cell_map.cells.len();
 
-    fn get_cell(&self, x: usize, y: usize) -> Option<&Option<Cell>> {
-        self.cell_vec.get(self.get_index(x, y))
-    }
+        let mut rng = thread_rng();
 
-    pub fn motor<F: FnMut() -> f64>(&mut self, random_fn: &mut F) {
-        while ! self.remaining.is_empty() {
+        self.random_cells = self.cell_map.cells.clone().drain().choose_multiple(&mut rng, n);
 
-            let ri = (random_fn)() * ((self.remaining.len() - 1) as f64);
+        for (point, mut cell) in self.random_cells.iter() {
+            let new_point = cell.position + (Point::from_degrees(cell.direction) * self.config.step_size as f64);
 
-            let ri = ri.round() as usize;
+            if self.cell_map.cells.contains_key(&new_point.into()) {
+                // spot is occupied, don't move
+                println!("Spot occupied by {:?}", cell);
+                // choose random orientation
+                cell.direction = random::<f64>() * 360f64;
+                // update the cell
+                let update = self.cell_map.cells.get_mut(&point).unwrap();
+                *update = cell;
 
-            let i = self.remaining[ri];
+            } else {
+                // move to the new coordinate
+                println!("Spot free, moving");
+                let discrete_point: Point<usize> = Point::from(new_point);
 
-            self.remaining.remove(ri);
+                let new_index = discrete_point.get_index(self.config.width, self.config.height);
 
-            if let Some(mut cell) = self.cell_map.cells.get(i).unwrap().clone() {
-                let new_point = cell.position + (Point::from_degrees(cell.direction) * self.config.step_size as f64);
+                cell.position = new_point;
 
-                println!("New point = {:?}", new_point);
+                // deposit trail on trailmap
+                self.trail_map.data[new_index] = self.config.deposition;
 
-                //attempt to move it
-                let new_point_discrete: Point<usize> = new_point.into();
-
-                if let Some(option) = self.cell_map.get_cell(new_point_discrete.x, new_point_discrete.y) { //checks against index out of bounds
-                    if let Some(cell) = option {
-                        // spot is occupied, don't move
-                        println!("Spot occupied by {:?}", cell);
-                        // choose random orientation
-                        let new_cell = Cell { direction: ((random_fn)() * 360f64), position: cell.position };
-                        self.cell_map.cells[i] = Some(new_cell);
-                        
-                    } else {
-                        // move to the new coordinate
-                        println!("Spot free, moving");
-                        let new_index = self.cell_map.get_index(new_point_discrete.x, new_point_discrete.y);
-
-                        cell.position = new_point;
-
-                        self.cell_map.cells[new_index] = Some(cell);
-                        // deposit trail on trailmap
-                        self.trail_map.data[new_index] = self.config.deposition;
-                        //remove the old cell
-                        self.cell_map.cells[i] = None;
-                    }
-                }
+                //update the cell
+                self.cell_map.cells.insert(new_point.into(), cell);
+                
+                //remove it from the old position
+                self.cell_map.cells.remove(&point);
             }
         }
-
-        // self.remaining = self.cell_indices;
     }
 
     /// Sensory stage, sets proper rotation for cells
-    fn sensor<F: FnMut() -> f64>(&mut self, random_fn: &mut F) {
-        for i in 0..self.cell_map.cells.len() {
-            if let Some(cell) = self.cell_map.cells.get_mut(i).unwrap() {
-                let sensor_config = self.config.sensor_config.clone();
-                let offset = sensor_config.offset_distance;    
+    fn sensor(&mut self) {
+        for cell in self.cell_map.cells.values_mut() {
+            let sensor_config = self.config.sensor_config.clone();
+            let offset = sensor_config.offset_distance;    
 
-                let point_fw = cell.position + (Point::from_degrees(cell.direction) * offset as f64);
-                
-                let angle_fl = cell.direction - sensor_config.angle;
-                let angle_fr = cell.direction + sensor_config.angle;
+            let point_fw = cell.position + (Point::from_degrees(cell.direction) * offset as f64);
+            
+            let angle_fl = cell.direction - sensor_config.angle;
+            let angle_fr = cell.direction + sensor_config.angle;
 
-                let point_fl = cell.position + (Point::from_degrees(angle_fl) * offset as f64);
-                let point_fr = cell.position + (Point::from_degrees(angle_fr) * offset as f64);
+            let point_fl = cell.position + (Point::from_degrees(angle_fl) * offset as f64);
+            let point_fr = cell.position + (Point::from_degrees(angle_fr) * offset as f64);
 
-                let fw = self.trail_map.get_value_point(point_fw).unwrap_or(&0);
-                let fr = self.trail_map.get_value_point(point_fr).unwrap_or(&0);
-                let fl = self.trail_map.get_value_point(point_fl).unwrap_or(&0);
+            let fw = self.trail_map.get_value_point(point_fw).unwrap_or(&0);
+            let fr = self.trail_map.get_value_point(point_fr).unwrap_or(&0);
+            let fl = self.trail_map.get_value_point(point_fl).unwrap_or(&0);
 
-                let mut direction: Option<Direction> = None;
+            let mut direction: Option<Direction> = None;
 
-                if fw > fl && fw > fr {
-                    //stay here
-                    continue;
-                } else if fw < fl && fw < fr {
-                    //rotate randomly by RA
-                    if (random_fn)() > 0.5f64 {
-                        direction = Some(Direction::LEFT);
-                    } else {
-                        direction = Some(Direction::RIGHT);
-                    }
-                } else if fl < fr {
-                    //rotate right by RA
-                    direction = Some(Direction::RIGHT);
-                } else if fr < fl {
+            if fw > fl && fw > fr {
+                //stay here
+                continue;
+            } else if fw < fl && fw < fr {
+                //rotate randomly by RA
+                if random::<f64>() > 0.5f64 {
                     direction = Some(Direction::LEFT);
+                } else {
+                    direction = Some(Direction::RIGHT);
                 }
-
-                match direction {
-                    Some(Direction::LEFT) => {
-                        cell.direction = (cell.direction - self.config.rotation_angle) % 360f64;
-                    },
-                    Some(Direction::RIGHT) => {
-                        cell.direction = (cell.direction + self.config.rotation_angle) % 360f64;
-                    },
-                    None => {
-                        continue;
-                    }
-                }   
+            } else if fl < fr {
+                //rotate right by RA
+                direction = Some(Direction::RIGHT);
+            } else if fr < fl {
+                direction = Some(Direction::LEFT);
             }
+
+            match direction {
+                Some(Direction::LEFT) => {
+                    cell.direction = (cell.direction - self.config.rotation_angle) % 360f64;
+                },
+                Some(Direction::RIGHT) => {
+                    cell.direction = (cell.direction + self.config.rotation_angle) % 360f64;
+                },
+                None => {
+                    continue;
+                }
+            }   
         }
     }
 
@@ -181,10 +165,12 @@ impl Simulation {
         self.trail_map.data = new_data;
     }
 
-    pub fn step<F: FnMut() -> f64>(&mut self, random_fn: &mut F) {
-        self.motor(random_fn);
-        self.sensor(random_fn);
-        self.diffuse();
+    pub fn step(&mut self, n: usize) {
+        for _ in 0..n {
+            self.motor();
+            self.sensor();
+            self.diffuse();
+        }
     }
 }
 
@@ -216,7 +202,7 @@ pub mod test {
         // simulation.motor();
 
         // If we get a cell at this point, it moved correctly
-        let cell = simulation.cell_map.get_value(3, 4);
+        let cell = simulation.cell_map.get_cell(Point::new(3, 4));
         assert!(cell.is_some());
         
         // Check that the chemoattractant was deposited at this position

@@ -6,6 +6,7 @@ Rust + WASM implementation of a slime mold simulation (based on [Characteristics
 
 
 [ ] - (big perf issue) Make sure that `remaining` (in `motor()` step) is always allocated, memcpy is taking up lots of time
+[ ] - - Use a HashMap to store the cells, (key = coordinate, no need to re-arrange vector and all that stuff, + random sampling from rand crate)
 [x] - Improve rng performance (function is blocking, either spawn threads or do async? or generate a large sample pool?)  
 [x] - Fix the bug of cells randomly dying  
 [ ] - Implement filter intensity (trail map)

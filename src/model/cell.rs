@@ -1,3 +1,6 @@
+use rand::Rng;
+use rand::random;
+use rand::thread_rng;
 use web_sys::ImageData;
 use wasm_bindgen::Clamped;
 
@@ -5,8 +8,9 @@ use super::plane::*;
 use super::config::*;
 use super::point::*;
 use super::trail_map::*;
+use std::collections::HashMap;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Cell {
     /// The pixel position of the cell
     pub position: Point<f64>,
@@ -18,52 +22,26 @@ impl Cell {
     pub fn position_discrete(&self) -> Point<usize> {
         self.position.into()
     }
+
+    /// Updates the position of the cell according to the current direction + passed distance
+    pub fn step(&mut self, distance: f64)
+    {
+        self.position = self.position + (Point::from_degrees(self.direction) * distance);
+    }
 }
 
 #[derive(Clone)]
 pub struct CellMap {
-    pub cells: Vec<Option<Cell>>,
+    pub cells: HashMap<Point<usize>, Cell>,
     width: usize,
     height: usize,
     sensor_config: SensorConfig
 }
 
-impl Plane<Option<Cell>> for CellMap {
-    fn width(&self) -> usize {
-        self.width
-    }
-
-    fn height(&self) -> usize {
-        self.height
-    }
-
-    fn data(&self) -> &Vec<Option<Cell>> {
-        &self.cells
-    }
-}
-
-impl Into<ImageData> for CellMap {
-    fn into(self) -> ImageData {
-
-        let mut data = Vec::new();
-
-        for (index, cell) in self.cells.iter().enumerate() {
-            if let Some(cell) = cell {
-                data.append(&mut vec![255, 255, 255, 255]); //white
-            } else {
-                
-                data.append(&mut vec![0, 0, 0, 255]); //black
-            }
-        }
-        
-        ImageData::new_with_u8_clamped_array_and_sh(Clamped(&data), self.width() as u32, self.height() as u32).unwrap()
-    }
-}
-
 impl CellMap {
     pub fn new(width: usize, height: usize, sensor_config: SensorConfig) -> Self {
 
-        let cells = vec![Option::None; width * height];
+        let cells = HashMap::with_capacity(width * height);
 
         Self {
             cells,
@@ -73,18 +51,18 @@ impl CellMap {
         }
     }
 
-    pub fn new_random<F>(width: usize, height: usize, sensor_config: SensorConfig, random_fn: &mut F, probability: f64) -> Self where F: FnMut() -> f64 {
-        let mut cells = vec![Option::None; width * height];
+    pub fn new_random(width: usize, height: usize, sensor_config: SensorConfig, probability: f64) -> Self {
+        let cell_n = width * height;
+        let mut cells: HashMap<Point<usize>, Cell> = HashMap::with_capacity(cell_n);
 
-        for (index, el) in cells.iter_mut().enumerate() {
-            if (random_fn)() < probability {
-                let y = index / width;
-                let x = index % width;
-
-                let position = Point { x: x as f64, y: y as f64 };
-                let direction = (random_fn)() * 360f64;
-
-                *el = Some(Cell { position, direction });
+        for y in 0..height {
+            for x in 0..width {
+                if random::<f64>() < probability {
+                    let position = Point { x: x as f64, y: y as f64 };
+                    let direction = random::<f64>() * 360f64;
+                    
+                    cells.insert(position.into(), Cell { position, direction });
+                }
             }
         }
 
@@ -99,19 +77,32 @@ impl CellMap {
     pub fn add_cell(&mut self, position: Point<f64>, direction: f64) {
         let discrete_pos: Point<usize> = position.into();
 
-        let index = self.get_index(discrete_pos.x, discrete_pos.y);
-
-        self.cells[index] = Some(Cell { position, direction });
+        self.cells.insert(discrete_pos, Cell { position, direction });
     }
 
-    pub fn get_cell(&self, x: usize, y: usize) -> Option<&Option<Cell>> {
-        let index = (y * self.width) + x;
-
-        self.cells.get(index)
+    pub fn get_cell(&self, position: Point<usize>) -> Option<&Cell> {
+        self.cells.get(&position)
     }
 
     pub fn live_cells(&self) -> usize {
-        self.cells.iter().filter(|val| val.is_some()).count()
+        self.cells.len()
+    }
+
+    pub fn render(&self) -> ImageData {
+
+        let mut data = Vec::new();
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if let Some(cell) = self.cells.get(&Point { x, y }) {
+                    data.append(&mut vec![255, 255, 255, 255]); //white
+                } else {
+                    data.append(&mut vec![0, 0, 0, 255]); //black
+                }
+            }
+        }
+        
+        ImageData::new_with_u8_clamped_array_and_sh(Clamped(&data), self.width as u32, self.height as u32).unwrap()
     }
 }
 
@@ -134,7 +125,7 @@ pub mod model_tests {
         let mut cell_map = CellMap::new(20, 20, SensorConfig::default());
         cell_map.add_cell(Point::new(2f64, 4f64), 0f64);
 
-        let res = cell_map.get_value(2, 4);
+        let res = cell_map.get_cell(Point::new(2, 4));
 
         assert!(res.is_some());
     }

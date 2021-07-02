@@ -1,3 +1,4 @@
+use rand::random;
 use web_sys::ImageData;
 use wasm_bindgen::Clamped;
 
@@ -36,11 +37,11 @@ impl TrailMap {
         }
     }
 
-    pub fn new_random<F>(width: usize, height: usize, random_fn: &mut F) -> Self where F: FnMut() -> f64 {
+    pub fn new_random(width: usize, height: usize) -> Self {
         let mut data = vec![0u8; width * height];
 
         for (index, el) in data.iter_mut().enumerate() {
-                let value = (random_fn)() * 255f64;
+                let value = random::<f64>() * 255f64;
 
                 *el = value.round() as u8;            
         }

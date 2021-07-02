@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 
 
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Point<T> {
     pub x: T,
     pub y: T
@@ -44,20 +44,27 @@ impl Point<f64> {
     }
 }
 
-impl Into<Point<i64>> for Point<f64> {
-    fn into(self) -> Point<i64> {
-        Point {
-            x: self.x.round() as i64,
-            y: self.y.round() as i64
+impl Point<usize> {
+    pub fn get_index(&self, width: usize, height: usize) -> usize {
+        // TODO: something is wrong here, fix it
+        ((width * (self.y)) + self.x) % (width * height)
+    }
+}
+
+impl From<Point<f64>> for Point<usize> {
+    fn from(point: Point<f64>) -> Self {
+        Self {
+            x: point.x.round() as usize,
+            y: point.y.round() as usize
         }
     }
 }
 
-impl Into<Point<usize>> for Point<f64> {
-    fn into(self) -> Point<usize> {
-        Point {
-            x: self.x.round() as usize,
-            y: self.y.round() as usize
+impl From<Point<f64>> for Point<i64> {
+    fn from(point: Point<f64>) -> Self {
+        Self {
+            x: point.x.round() as i64,
+            y: point.y.round() as i64
         }
     }
 }

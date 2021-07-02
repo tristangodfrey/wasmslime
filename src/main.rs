@@ -16,11 +16,16 @@ use web_sys::ImageData;
 use wasm_bindgen::Clamped;
 use yew::services::console::ConsoleService as Console;
 
+use rand::thread_rng;
+
 mod model;
 
 enum Msg {
     Step,
-    TrailCanvasClick(MouseEvent)
+    TrailCanvasClick(MouseEvent),
+    CellCanvasClick(MouseEvent),
+    SetStepNumber(usize),
+    SetSize(usize)
 }
 
 struct Model {
@@ -32,7 +37,8 @@ struct Model {
     trail_canvas: NodeRef,
     composite_canvas: NodeRef,
     simulation: Simulation,
-    live_cell_count: usize
+    live_cell_count: usize,
+    step_n: usize
 }
 
 fn get_context(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
@@ -44,62 +50,16 @@ fn get_context(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
         .unwrap()
 }
 
-pub struct Rng {
-    random_numbers: IntoIter<f64>
-}
+fn create_simulation(size: usize) -> Simulation {
+    let mut config = SimulationConfig::default();
 
-impl Rng {
-    pub fn new(size: usize) -> Self {
-        let mut random_numbers = vec![1u8; size];
+    config.width = size;
+    config.height = size;
 
-        let mut vec: Vec<u32> = (0..10).collect();
-        vec.shuffle(&mut thread_rng());
+    let cell_map = CellMap::new_random(config.width, config.height, config.sensor_config.clone(),  0.1f64);
+    let trail_map = TrailMap::new_random(config.width, config.height);
 
-        Console::log(&format!("{:?}", vec));
-
-        match getrandom::getrandom(&mut random_numbers) {
-            Ok(_) => {
-                Console::log("Random success");
-            }
-            Err(e) => {
-                Console::log(&format!("Random failed: {:?}", e));
-            }
-        }
-
-        let random_numbers: Vec<f64> = random_numbers.iter().map(|item| *item as f64 / 255f64).collect();
-
-        Self {
-            random_numbers: random_numbers.into_iter()
-        }
-    }
-}
-
-impl Fn<()> for Rng {
-    extern "rust-call" fn call(&self, _args: ()) -> f64 {
-        unimplemented!()
-    }
-}
-
-impl FnMut<()> for Rng {
-    extern "rust-call" fn call_mut(&mut self, _args: ()) -> f64 {
-        match self.random_numbers.next() {
-            Some(value) => {
-                value
-            }
-            None => {
-                Console::log("Random numbers exhausted, wrapping");
-                0.5f64
-            }
-        }
-    }
-}
-
-impl FnOnce<()> for Rng {
-    type Output = f64;
-
-    extern "rust-call" fn call_once(self, _args: ()) -> f64 {
-        unimplemented!()
-    }
+    Simulation::new(config, cell_map, trail_map)
 }
 
 impl Component for Model {
@@ -108,17 +68,7 @@ impl Component for Model {
 
     fn create(_props: Self::Properties, link: ComponentLink<Self>) -> Self {
 
-        let mut config = SimulationConfig::default();
-
-        config.width = 200;
-        config.height = 200;
-
-        let mut rng = Rng::new(50000);
-
-        Console::log("Random numbers have been generated");
-
-        let cell_map = CellMap::new_random(config.width, config.height, config.sensor_config.clone(), &mut rng, 0.1f64);
-        let trail_map = TrailMap::new_random(config.width, config.height, &mut Rng::new(50000));
+        
 
         Self {
             link,
@@ -126,8 +76,9 @@ impl Component for Model {
             cell_canvas: NodeRef::default(),
             trail_canvas: NodeRef::default(),
             composite_canvas: NodeRef::default(),
-            simulation: Simulation::new(config, cell_map, trail_map),
-            live_cell_count: 0
+            simulation: create_simulation(200),
+            live_cell_count: 0,
+            step_n: 1
         }
     }
 
@@ -135,13 +86,13 @@ impl Component for Model {
         match msg {
             Msg::Step => {
                 //do the step
-                self.simulation.step(&mut Rng::new(50000));
+                self.simulation.step(self.step_n);
                 
                 //render shit
                 if let Some(cell_canvas) = self.cell_canvas.cast::<HtmlCanvasElement>() {
                     let context = get_context(cell_canvas);
 
-                    let image_data: ImageData = self.simulation.cell_map.clone().into();
+                    let image_data: ImageData = self.simulation.cell_map.render();
 
                     context.put_image_data(&image_data, 0f64, 0f64);
                     
@@ -163,12 +114,27 @@ impl Component for Model {
 
                 true
             },
+            Msg::SetStepNumber(n) => {
+                self.step_n = n;
+
+                true
+            },
             Msg::TrailCanvasClick(event) => {
                 let (x, y) = (event.offset_x(), event.offset_y());
 
                 Console::log(&format!("Got a mouse click @ {:?},{:?}", x, y));
 
-                
+                true
+            },
+            Msg::CellCanvasClick(event) => {
+                let (x, y) = (event.offset_x(), event.offset_y());
+
+                Console::log(&format!("Got a mouse click @ {:?},{:?}", x, y));
+
+                true
+            },
+            Msg::SetSize(size) => {
+                self.simulation = create_simulation(size);
 
                 true
             }
@@ -202,21 +168,51 @@ impl Component for Model {
     }
 
     fn view(&self) -> Html {
-
         let trail_canvas_click = self.link.callback(|e: MouseEvent| Msg::TrailCanvasClick(e));
+        let cell_canvas_click = self.link.callback(|e: MouseEvent| Msg::CellCanvasClick(e));
+        //e.data().unwrap_or(String::from("1")).parse::<usize>().unwrap_or(1))
+
+        let step_number_change = self.link.callback(|e: ChangeData| {
+            if let ChangeData::Value(e) = e {
+                Msg::SetStepNumber(e.parse::<usize>().unwrap_or(1))
+            } else {
+                Msg::SetStepNumber(1)
+            }
+        });
+
+        let size_change = self.link.callback(|e: ChangeData| {
+            if let ChangeData::Value(e) = e {
+                Msg::SetSize(e.parse::<usize>().unwrap_or(1))
+            } else {
+                Msg::SetSize(200)
+            }
+        });
 
         html! {
             <div>
+                <div class={"display"}>
+                    <canvas
+                        ref=self.cell_canvas.clone()
+                        width=self.simulation.config.width.to_string()
+                        height=self.simulation.config.height.to_string()></canvas>
+                    <canvas
+                        ref=self.trail_canvas.clone()
+                        width=self.simulation.config.width.to_string()
+                        onclick=trail_canvas_click
+                        height=self.simulation.config.height.to_string()>
+                    </canvas>
+                </div>
                 <p>{ format!("Live cell count: {}", self.live_cell_count) }</p>
                 <button onclick=self.link.callback(|_| Msg::Step)>{ "Step" }</button>
-                <canvas ref=self.cell_canvas.clone() width=self.simulation.config.width.to_string() height=self.simulation.config.height.to_string()></canvas>
-                <canvas
-                    ref=self.trail_canvas.clone()
-                    width=self.simulation.config.width.to_string()
-                    onclick=trail_canvas_click
-                    height=self.simulation.config.height.to_string()>
-                </canvas>
+                
+                
                 <canvas ref=self.composite_canvas.clone() width=self.simulation.config.width.to_string() height=self.simulation.config.height.to_string()></canvas>
+                <form>
+                    <label for={"step_number"}>{"Step number"}</label>
+                    <input id={"step_number"} type={"text"} onchange=step_number_change value=self.step_n.to_string() />
+                    <label for={"size"}>{"Size"}</label>
+                    <input id={"size"} type={"text"} onchange=size_change value=self.simulation.config.height.to_string() />
+                </form>
                 <p>{ self.value }</p>
             </div>
         }
